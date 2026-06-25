@@ -710,6 +710,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"No se pudo iniciar audit scheduler: {e}")
 
-    print(f"GHH Webhook WB arrancando en http://localhost:{port}/webhook")
     port = int(os.environ.get("PORT", 5001))
+    print(f"GHH Webhook WB arrancando en http://localhost:{port}/webhook")
     app.run(host="0.0.0.0", port=port, debug=False)
