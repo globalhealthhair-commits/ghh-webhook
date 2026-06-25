@@ -1,10 +1,11 @@
 import json, os
 
-# ── Modo test — poner True para pruebas, False en producción ──────
-TEST_MODE = True   # ← CAMBIAR a False antes de desplegar en Railway
-
+# ── Detección de entorno ──────────────────────────────────────────
 _BASE      = os.path.dirname(os.path.abspath(__file__))
 _ON_RAILWAY = bool(os.environ.get("RAILWAY_ENVIRONMENT"))
+
+# TEST_MODE: False en Railway (producción), True solo en local sin credenciales
+TEST_MODE = not _ON_RAILWAY
 
 # ── Credenciales: env vars en Railway, JSON en local ──────────────
 def _env(key, fallback=None):
