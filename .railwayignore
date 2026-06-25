@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+data/
+estado_leads.json
+pending_actions.json
+media_cache.json
+set_wa_token.sh
+com.ghh.webhook.plist
+start.sh

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ghh.webhook</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/sergimaymo/Desktop/Proyectos Claude/AdwordsGHH/WA-AUTO/start.sh</string>
+    </array>
+
+    <!-- Reinicia automáticamente si el proceso muere -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Arranca al iniciar sesión en el Mac -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Espera 10s antes de reiniciar tras un crash -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/ghh_webhook.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ghh_webhook_error.log</string>
+</dict>
+</plist>
