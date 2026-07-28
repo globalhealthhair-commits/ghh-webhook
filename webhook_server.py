@@ -484,9 +484,14 @@ def _enviar_por_email(email_destino: str, nombre: str, pdf_path: str):
         from email.mime.text import MIMEText
         from email import encoders
 
-        _CREDS = json.load(open(os.path.join(_BASE, "../credentials/meta_tokens.json")))
-        gmail_user = _CREDS.get("gmail_user", "sergimaymo@gmail.com")
-        gmail_pass = _CREDS.get("gmail_app_password", "")
+        gmail_user = os.environ.get("GMAIL_USER", "sergimaymo@gmail.com")
+        gmail_pass = os.environ.get("GMAIL_APP_PASSWORD", "")
+        if not gmail_pass:
+            creds_path = os.path.join(_BASE, "../credentials/meta_tokens.json")
+            if os.path.exists(creds_path):
+                _CREDS = json.load(open(creds_path))
+                gmail_user = _CREDS.get("gmail_user", gmail_user)
+                gmail_pass = _CREDS.get("gmail_app_password", "")
         if not gmail_pass:
             print("[EMAIL] Sin App Password configurada — saltando email")
             return

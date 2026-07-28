@@ -2,16 +2,17 @@ import json, os
 
 # ── Detección de entorno ──────────────────────────────────────────
 _BASE      = os.path.dirname(os.path.abspath(__file__))
-_ON_RAILWAY = bool(os.environ.get("RAILWAY_ENVIRONMENT"))
+# Cualquier hosting con las credenciales en variables de entorno (Railway, Render, etc.)
+_HAS_ENV_CREDS = bool(os.environ.get("WA_TOKEN"))
 
-# TEST_MODE: False en Railway (producción), True solo en local sin credenciales
-TEST_MODE = not _ON_RAILWAY
+# TEST_MODE: False en produccion (con env vars), True solo en local sin credenciales
+TEST_MODE = not _HAS_ENV_CREDS
 
-# ── Credenciales: env vars en Railway, JSON en local ──────────────
+# ── Credenciales: env vars en produccion, JSON en local ──────────────
 def _env(key, fallback=None):
     return os.environ.get(key, fallback)
 
-if _ON_RAILWAY:
+if _HAS_ENV_CREDS:
     WA_TOKEN   = _env("WA_TOKEN")
     WABA_ID    = _env("WABA_ID")
     TG_TOKEN   = _env("TG_TOKEN")
