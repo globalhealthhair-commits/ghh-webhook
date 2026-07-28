@@ -24,6 +24,26 @@ SENT_LOG_PATH = os.path.join(BASE, "data", "review_requests_sent.json")
 
 SHEET_ID = "1uMECTEaF8DzdpcxnFKTcGELK4GgRrpfeHFr3xbLRFkY"  # "Tabla Merdan Celik" 2026
 
+# Atribucion de mercado: columna "Country" (pais de origen/salida) manda SIEMPRE.
+# El nombre/apellido NUNCA decide por si solo -- solo se usa como señal secundaria
+# si el pais viene vacio/ambiguo. Evita el error de asumir mercado por apellido
+# de sonido español cuando el pais real es otro (ej. Lauria/Fierro con pais
+# Paises Bajos/Mexico -- NO son mercado España pese al apellido).
+SPAIN_COUNTRIES = {"spain", "espana", "españa"}
+
+
+def _is_spain_market(country_raw, city_raw=""):
+    country = (country_raw or "").strip().lower()
+    if country in SPAIN_COUNTRIES:
+        return True
+    if country:
+        return False  # pais explicito y no es España -> NO es mercado España, sin excepcion
+    # Pais vacio/ambiguo: fallback muy conservador a ciudad de residencia
+    city = (city_raw or "").strip().lower()
+    spain_cities_hint = {"madrid", "barcelona", "sevilla", "valencia", "bilbao",
+                          "las palmas", "tenerife", "malaga", "granada", "santander"}
+    return city in spain_cities_hint
+
 SMTP_HOST = "smtp.hostinger.com"
 SMTP_PORT = 465
 SMTP_USER = "info@trasplantepeloturquia.com"
@@ -135,6 +155,8 @@ def run_review_requests():
         if len(row) < 28:
             continue
         raw_name = row[1] if len(row) > 1 else ""
+        residencial_city = row[4] if len(row) > 4 else ""
+        country_raw = row[6] if len(row) > 6 else ""  # columna "Country" (origen)
         checkin_raw = row[11] if len(row) > 11 else ""  # columna "Check-in"
         phone = row[26] if len(row) > 26 else ""
         email = _extract_email(row[27] if len(row) > 27 else "")  # columna "e-mail"
@@ -143,6 +165,9 @@ def run_review_requests():
         if not checkin or checkin.date() != yesterday:
             continue
         if not email:
+            continue
+        if not _is_spain_market(country_raw, residencial_city):
+            print(f"[REVIEW_REQ] SKIP (no es mercado España, pais={country_raw!r}): {raw_name}")
             continue
 
         key = f"{raw_name.strip()}|{email.lower()}"
