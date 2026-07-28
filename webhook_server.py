@@ -697,16 +697,23 @@ if __name__ == "__main__":
         from apscheduler.triggers.cron import CronTrigger
         from audit_seo_sem import run_daily_audit
         from clinic_emails import run_clinic_liquidation_emails, run_clinic_reminder_emails
+        from x_bot import run_x_bot_cycle
+        from review_requests import run_review_requests
         _bg = BackgroundScheduler(timezone="Atlantic/Canary")
         _bg.add_job(run_daily_audit, CronTrigger(hour=7, minute=0))
         # Emails clínica pre-llegada (Canary = Madrid-1h en verano)
-        # 08:00 Madrid = 07:00 Canary → recordatorio sin cálculos
-        # 10:00 Madrid = 09:00 Canary → liquidaciones completas (D-2 y D-1)
         _bg.add_job(run_clinic_reminder_emails, CronTrigger(hour=7, minute=0))
         _bg.add_job(run_clinic_liquidation_emails, CronTrigger(hour=9, minute=0))
+        # Solicitud automática de reseñas (Google+Trustpilot) — pacientes con check-in ayer
+        _bg.add_job(run_review_requests, CronTrigger(hour=10, minute=0))
+        # X/Twitter bot — comprueba cada 30min si es ventana óptima para publicar (máx 2/día)
+        from apscheduler.triggers.interval import IntervalTrigger
+        _bg.add_job(run_x_bot_cycle, IntervalTrigger(minutes=30))
         _bg.start()
         print("Auditoria diaria SEO/SEM programada 07:00 Atlantic/Canary")
         print("Emails clinica: recordatorio 07:00, liquidaciones 09:00 Atlantic/Canary")
+        print("Solicitud de reseñas (Google+Trustpilot): diario 10:00 Atlantic/Canary")
+        print("X/Twitter bot: ciclo cada 30min (max 2 tweets/dia en horas optimas)")
     except Exception as e:
         print(f"No se pudo iniciar audit scheduler: {e}")
 
