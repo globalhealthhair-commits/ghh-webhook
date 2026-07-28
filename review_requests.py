@@ -51,16 +51,29 @@ BCC = "sergimaymo@gmail.com"
 
 
 def _sheets_service():
-    with open(GOOGLE_TOKENS_PATH) as f:
-        tok = json.load(f)
-    creds = Credentials(
-        token=tok.get("access_token"),
-        refresh_token=tok.get("refresh_token"),
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=tok.get("client_id"),
-        client_secret=tok.get("client_secret"),
-        scopes=tok.get("scope", "").split(),
-    )
+    refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN")
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if refresh_token and client_id and client_secret:
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+    else:
+        with open(GOOGLE_TOKENS_PATH) as f:
+            tok = json.load(f)
+        creds = Credentials(
+            token=tok.get("access_token"),
+            refresh_token=tok.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=tok.get("client_id"),
+            client_secret=tok.get("client_secret"),
+            scopes=tok.get("scope", "").split(),
+        )
     return build("sheets", "v4", credentials=creds)
 
 
