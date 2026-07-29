@@ -275,6 +275,25 @@ MSGS = {
     },
 }
 
+# ── Seguimiento manual vía contacto compartido (PRUEBA, 30-jul-2026) ──
+MSG_RECORDATORIO_FOTOS_MANUAL = (
+    "Hola {nombre} 👋 Somos el equipo de Global Health Hair — el mismo que te "
+    "atendió por WhatsApp en el +34 648 423 777. Te escribimos desde este número "
+    "para no perder el hilo de tu consulta.\n\n"
+    "Aún no hemos recibido tus fotos para poder valorar tu caso con el Dr. Merdan "
+    "Çelik, médico titulado con más de 22 años de experiencia. En cuanto nos las "
+    "envíes (aquí mismo o al otro número, como prefieras), seguimos adelante sin demora.\n\n"
+    "¡Te esperamos! — Dr. Çelik · Global Health Hair"
+)
+MSG_SEGUIMIENTO_INFORME_MANUAL = (
+    "Hola {nombre} 👋 Somos Global Health Hair, el mismo equipo del +34 648 423 777. "
+    "Te escribimos para hacer seguimiento del informe personalizado que te enviamos "
+    "hace unos días.\n\n"
+    "¿Has podido revisarlo? Si tienes cualquier duda sobre la técnica, el precio o "
+    "el proceso, estamos encantados de resolvértela sin compromiso.\n\n"
+    "— Dr. Çelik · Global Health Hair"
+)
+
 # ── Enrutamiento hub central multi-mercado (sin servidor 24/7 propio) ──
 # Idiomas cuyos mensajes se depositan en la cola compartida (Sheet) en vez de
 # procesarse con la plantilla genérica de España (dominio/precio equivocados).

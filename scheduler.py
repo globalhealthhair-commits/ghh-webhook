@@ -82,7 +82,27 @@ def _execute(phone: str, action: str, kwargs: dict):
     from informe_generator import generate_informe
 
     try:
-        if action == "fotos_ok":
+        if action == "recordatorio_fotos_manual":
+            from webhook_server import load_state
+            lead   = load_state().get(phone, {})
+            nombre = lead.get("nombre") or ""
+            primer = nombre.split()[0] if nombre else "ahí"
+            wa_api.send_text(phone, config.MSG_RECORDATORIO_FOTOS_MANUAL.format(nombre=primer))
+            wa_api.send_text(config.ADMIN_NUMBER,
+                f"📤 Recordatorio de fotos enviado (prueba) a {nombre or '(sin nombre)'} · {phone}")
+            print(f"[SCHED] recordatorio_fotos_manual enviado a {phone}")
+
+        elif action == "seguimiento_informe_manual":
+            from webhook_server import load_state
+            lead   = load_state().get(phone, {})
+            nombre = lead.get("nombre") or ""
+            primer = nombre.split()[0] if nombre else "ahí"
+            wa_api.send_text(phone, config.MSG_SEGUIMIENTO_INFORME_MANUAL.format(nombre=primer))
+            wa_api.send_text(config.ADMIN_NUMBER,
+                f"📤 Seguimiento de informe enviado (prueba) a {nombre or '(sin nombre)'} · {phone}")
+            print(f"[SCHED] seguimiento_informe_manual enviado a {phone}")
+
+        elif action == "fotos_ok":
             from webhook_server import load_state
             lang = load_state().get(phone, {}).get("idioma", "es")
             wa_api.send_text(phone, config.get_msgs(lang)["fotos_ok"])

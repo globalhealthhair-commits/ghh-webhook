@@ -286,6 +286,67 @@ def norm(num):
     num = str(num).strip()
     return num if num.startswith("+") else "+" + num
 
+# ─── Seguimiento manual vía contacto compartido (PRUEBA) ──────────
+def _extraer_telefono_contacto(msg):
+    """Extrae y normaliza el primer teléfono de un mensaje 'contacts' de WhatsApp."""
+    contactos = msg.get("contacts", [])
+    if not contactos:
+        return None, None
+    contacto = contactos[0]
+    nombre = contacto.get("name", {}).get("formatted_name", "")
+    phones = contacto.get("phones", [])
+    if not phones:
+        return None, nombre
+    # wa_id es el número ya limpio (sin +, sin espacios); preferirlo si existe
+    raw = phones[0].get("wa_id") or phones[0].get("phone", "")
+    if not raw:
+        return None, nombre
+    return norm(raw), nombre
+
+def _handle_seguimiento_contacto(msg):
+    telefono, nombre = _extraer_telefono_contacto(msg)
+    if not telefono:
+        wa_api.send_text(config.ADMIN_NUMBER,
+            "⚠️ No he podido leer el número del contacto compartido. Prueba de nuevo.")
+        return
+
+    state = load_state()
+    lead  = state.get(telefono, {})
+    fase  = lead.get("seguimiento_manual", "")
+
+    # Timers de PRUEBA (minutos) — cambiar a días cuando se valide el mecanismo
+    MIN_RECORDATORIO_FOTOS   = 2
+    MIN_SEGUIMIENTO_INFORME  = 1
+    now = time.time()
+
+    if fase in ("", "cerrado"):
+        lead["seguimiento_manual"] = "fotos_pedidas"
+        lead["nombre"] = lead.get("nombre") or nombre
+        state[telefono] = lead
+        save_state(state)
+        scheduler.schedule(telefono, "recordatorio_fotos_manual", fire_at=now + MIN_RECORDATORIO_FOTOS * 60)
+        wa_api.send_text(config.ADMIN_NUMBER,
+            f"✅ *Registrado: fotos pedidas*\n👤 {nombre or '(sin nombre)'} · {telefono}\n"
+            f"⏰ Recordatorio de prueba en {MIN_RECORDATORIO_FOTOS} min si no llegan fotos.")
+
+    elif fase == "fotos_pedidas":
+        scheduler.cancel(telefono, "recordatorio_fotos_manual")
+        lead["seguimiento_manual"] = "informe_enviado"
+        state[telefono] = lead
+        save_state(state)
+        scheduler.schedule(telefono, "seguimiento_informe_manual", fire_at=now + MIN_SEGUIMIENTO_INFORME * 60)
+        wa_api.send_text(config.ADMIN_NUMBER,
+            f"✅ *Registrado: fotos recibidas + informe enviado*\n👤 {nombre or '(sin nombre)'} · {telefono}\n"
+            f"⏰ Seguimiento de prueba en {MIN_SEGUIMIENTO_INFORME} min si no responde.")
+
+    elif fase == "informe_enviado":
+        scheduler.cancel(telefono, "seguimiento_informe_manual")
+        lead["seguimiento_manual"] = "cerrado"
+        state[telefono] = lead
+        save_state(state)
+        wa_api.send_text(config.ADMIN_NUMBER,
+            f"✅ *Caso cerrado*\n👤 {nombre or '(sin nombre)'} · {telefono}\nSin más avisos pendientes.")
+
 # ─── Cola de mensajes para mercados internacionales sin servidor 24/7 ─────
 _INTL_QUEUE_LOCK = threading.Lock()
 
@@ -372,6 +433,15 @@ def process_message(msg):
         if body.startswith("##"):
             handle_admin_command(body[2:].strip())
             return
+
+    # ── Seguimiento manual: admin comparte un contacto (PRUEBA) ──
+    # Cada vez que Sergi comparte el contacto de un cliente, avanza un estado:
+    # 1ª vez → fotos pedidas (recordatorio a los N min/días si no llegan fotos)
+    # 2ª vez → informe enviado (seguimiento a los N min/días si no responde)
+    # 3ª vez → cerrado (cancela cualquier aviso pendiente)
+    if from_num == config.ADMIN_NUMBER and msg_type == "contacts":
+        _handle_seguimiento_contacto(msg)
+        return
 
     # ── Mensajes de leads ────────────────────────────────────────
     state = load_state()
