@@ -322,13 +322,72 @@ def _proxima_ventana_tarde(desde_ts, hora_ini=16, hora_fin=19):
         candidato = ventana_fin
     return candidato.timestamp()
 
-def _handle_seguimiento_contacto(msg):
-    telefono, nombre = _extraer_telefono_contacto(msg)
-    if not telefono:
-        wa_api.send_text(config.ADMIN_NUMBER,
-            "⚠️ No he podido leer el número del contacto compartido. Prueba de nuevo.")
-        return
+def _extraer_telefono_foto(media_id):
+    """
+    Usa un modelo de visión (tarea acotada: solo leer el número, no interpretar
+    la conversación) para extraer el teléfono visible en la cabecera de una
+    captura de pantalla de WhatsApp. Devuelve (telefono_normalizado, nombre) o (None, None).
+    """
+    import base64, requests as _requests
+    try:
+        img_bytes, mime = wa_api.download_media(media_id)
+    except Exception as e:
+        print(f"[SEGUIMIENTO_FOTO] error descargando media: {e}")
+        return None, None
 
+    api_key = os.environ.get("OPENAI_API_KEY") or _load_openai_key()
+    if not api_key:
+        print("[SEGUIMIENTO_FOTO] OPENAI_API_KEY no configurada")
+        return None, None
+
+    b64 = base64.b64encode(img_bytes).decode()
+    prompt = (
+        "Esto es una captura de pantalla de un chat de WhatsApp. Lee SOLO el número de "
+        "teléfono y el nombre del contacto que aparecen en la cabecera superior del chat "
+        "(no leas el contenido de los mensajes). Responde EXCLUSIVAMENTE en formato JSON "
+        "compacto: {\"telefono\": \"+34XXXXXXXXX\", \"nombre\": \"Nombre\"}. "
+        "Si no puedes leer el número con total claridad, responde {\"telefono\": null, \"nombre\": null}. "
+        "No inventes ni completes dígitos que no veas con claridad."
+    )
+    try:
+        r = _requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+                    ],
+                }],
+                "max_tokens": 100,
+            },
+            timeout=20,
+        )
+        data = r.json()
+        texto = data["choices"][0]["message"]["content"].strip()
+        texto = texto.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        parsed = json.loads(texto)
+        telefono = parsed.get("telefono")
+        nombre   = parsed.get("nombre")
+        if telefono:
+            telefono = norm(telefono.replace(" ", ""))
+        return telefono, nombre
+    except Exception as e:
+        print(f"[SEGUIMIENTO_FOTO] error leyendo número por visión: {e}")
+        return None, None
+
+def _load_openai_key():
+    path = os.path.join(_BASE, "..", "credentials", "openai_api_key.txt")
+    if os.path.exists(path):
+        return open(path).read().strip()
+    return None
+
+def _avanzar_estado_seguimiento(telefono, nombre):
+    """Motor de estados compartido — mismo comportamiento venga el número de un
+    contacto compartido o de una foto leída por visión."""
     state = load_state()
     lead  = state.get(telefono, {})
     fase  = lead.get("seguimiento_manual", "")
@@ -372,6 +431,28 @@ def _handle_seguimiento_contacto(msg):
         save_state(state)
         wa_api.send_text(config.ADMIN_NUMBER,
             f"✅ *Caso cerrado*\n👤 {nombre or '(sin nombre)'} · {telefono}\nSin más avisos pendientes.")
+
+def _handle_seguimiento_contacto(msg):
+    telefono, nombre = _extraer_telefono_contacto(msg)
+    if not telefono:
+        wa_api.send_text(config.ADMIN_NUMBER,
+            "⚠️ No he podido leer el número del contacto compartido. Prueba de nuevo.")
+        return
+    _avanzar_estado_seguimiento(telefono, nombre)
+
+def _handle_seguimiento_foto(msg):
+    media_id = msg.get("image", {}).get("id")
+    if not media_id:
+        return
+    wa_api.send_text(config.ADMIN_NUMBER, "🔎 Leyendo el número de la captura...")
+    telefono, nombre = _extraer_telefono_foto(media_id)
+    if not telefono:
+        wa_api.send_text(config.ADMIN_NUMBER,
+            "⚠️ No he podido leer el número con claridad en esa captura — para no arriesgarme "
+            "a equivocarme de cliente, no he registrado nada. Prueba con una foto donde se vea "
+            "bien la cabecera del chat (nombre/número arriba), o comparte el contacto directamente.")
+        return
+    _avanzar_estado_seguimiento(telefono, nombre)
 
 # ─── Cola de mensajes para mercados internacionales sin servidor 24/7 ─────
 _INTL_QUEUE_LOCK = threading.Lock()
@@ -460,13 +541,16 @@ def process_message(msg):
             handle_admin_command(body[2:].strip())
             return
 
-    # ── Seguimiento manual: admin comparte un contacto (PRUEBA) ──
-    # Cada vez que Sergi comparte el contacto de un cliente, avanza un estado:
+    # ── Seguimiento manual: admin comparte un contacto O una captura (PRUEBA) ──
+    # Cada vez que Sergi envía el contacto/captura de un cliente, avanza un estado:
     # 1ª vez → fotos pedidas (recordatorio a los N min/días si no llegan fotos)
     # 2ª vez → informe enviado (seguimiento a los N min/días si no responde)
     # 3ª vez → cerrado (cancela cualquier aviso pendiente)
     if from_num == config.ADMIN_NUMBER and msg_type == "contacts":
         _handle_seguimiento_contacto(msg)
+        return
+    if from_num == config.ADMIN_NUMBER and msg_type == "image":
+        _handle_seguimiento_foto(msg)
         return
 
     # ── Mensajes de leads ────────────────────────────────────────

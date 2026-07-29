@@ -39,6 +39,18 @@ def forward_image(to, media_id, caption=""):
     })
     return r.json()
 
+def download_media(media_id):
+    """Descarga los bytes de un media (foto/vídeo) recibido por webhook. Devuelve (bytes, mime_type)."""
+    headers = {"Authorization": f"Bearer {config.WA_TOKEN}"}
+    meta = requests.get(f"https://graph.facebook.com/v22.0/{media_id}", headers=headers).json()
+    url  = meta.get("url")
+    mime = meta.get("mime_type", "image/jpeg")
+    if not url:
+        raise Exception(f"No se pudo obtener la URL del media {media_id}: {meta}")
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    return r.content, mime
+
 def upload_media(file_path, mime_type):
     headers = {"Authorization": f"Bearer {config.WA_TOKEN}"}
     with open(file_path, "rb") as f:
