@@ -290,7 +290,10 @@ MSG_SEGUIMIENTO_INFORME_MANUAL = (
     "Te escribimos para hacer seguimiento del informe personalizado que te enviamos "
     "hace unos días.\n\n"
     "¿Has podido revisarlo? Si tienes cualquier duda sobre la técnica, el precio o "
-    "el proceso, estamos encantados de resolvértela sin compromiso.\n\n"
+    "el proceso, podemos resolvértela de dos formas — como prefieras:\n"
+    "📞 Con una llamada personalizada, o\n"
+    "💬 Aquí mismo, por este WhatsApp.\n\n"
+    "Estamos encantados de ayudarte, sin compromiso.\n\n"
     "— Dr. Çelik · Global Health Hair"
 )
 

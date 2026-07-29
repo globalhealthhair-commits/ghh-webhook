@@ -154,6 +154,8 @@ def detect_language(text: str, phone: str, history_lang: str = "") -> str:
 _BASE = os.path.dirname(os.path.abspath(__file__))
 
 TZ = ZoneInfo("Atlantic/Canary")
+TZ_MADRID = ZoneInfo("Europe/Madrid")  # ventana de envío al cliente, siempre hora peninsular
+SEGUIMIENTO_MANUAL_TEST = True  # ⚠️ True = timers en minutos para probar; False = timers reales (24h/72h)
 HORA_MIN = (8, 30)   # 08:30
 HORA_MAX = (20, 0)   # 20:00
 MIN_ESPERA_H = 0.167 if config.TEST_MODE else 4  # 10 min en test, 4h en producción
@@ -303,6 +305,23 @@ def _extraer_telefono_contacto(msg):
         return None, nombre
     return norm(raw), nombre
 
+def _proxima_ventana_tarde(desde_ts, hora_ini=16, hora_fin=19):
+    """
+    Próximo hueco de envío al día siguiente, entre hora_ini y hora_fin (hora Madrid).
+    Si el momento actual + 24h ya cae dentro de la ventana de mañana, se usa ese instante;
+    si cae antes, se espera a hora_ini; si cae después (raro), se limita a hora_fin.
+    """
+    ahora_madrid = datetime.fromtimestamp(desde_ts, TZ_MADRID)
+    manana = ahora_madrid + timedelta(days=1)
+    ventana_ini = manana.replace(hour=hora_ini, minute=0, second=0, microsecond=0)
+    ventana_fin = manana.replace(hour=hora_fin, minute=0, second=0, microsecond=0)
+    candidato = ahora_madrid + timedelta(hours=24)
+    if candidato < ventana_ini:
+        candidato = ventana_ini
+    elif candidato > ventana_fin:
+        candidato = ventana_fin
+    return candidato.timestamp()
+
 def _handle_seguimiento_contacto(msg):
     telefono, nombre = _extraer_telefono_contacto(msg)
     if not telefono:
@@ -313,31 +332,38 @@ def _handle_seguimiento_contacto(msg):
     state = load_state()
     lead  = state.get(telefono, {})
     fase  = lead.get("seguimiento_manual", "")
+    now   = time.time()
 
-    # Timers de PRUEBA (minutos) — cambiar a días cuando se valide el mecanismo
-    MIN_RECORDATORIO_FOTOS   = 2
-    MIN_SEGUIMIENTO_INFORME  = 1
-    now = time.time()
+    if SEGUIMIENTO_MANUAL_TEST:
+        fire_fotos   = now + 2 * 60     # 2 min (prueba)
+        fire_informe = now + 1 * 60     # 1 min (prueba)
+        nota_fotos   = "en 2 min (modo prueba)"
+        nota_informe = "en 1 min (modo prueba)"
+    else:
+        fire_fotos   = _proxima_ventana_tarde(now)  # 24h+, ventana 16-19h del día siguiente
+        fire_informe = now + 72 * 3600               # 72h (3 días) desde informe enviado
+        nota_fotos   = f"el {datetime.fromtimestamp(fire_fotos, TZ_MADRID).strftime('%d/%m a las %H:%M')} (hora Madrid)"
+        nota_informe = "en 72h si no responde"
 
     if fase in ("", "cerrado"):
         lead["seguimiento_manual"] = "fotos_pedidas"
         lead["nombre"] = lead.get("nombre") or nombre
         state[telefono] = lead
         save_state(state)
-        scheduler.schedule(telefono, "recordatorio_fotos_manual", fire_at=now + MIN_RECORDATORIO_FOTOS * 60)
+        scheduler.schedule(telefono, "recordatorio_fotos_manual", fire_at=fire_fotos)
         wa_api.send_text(config.ADMIN_NUMBER,
             f"✅ *Registrado: fotos pedidas*\n👤 {nombre or '(sin nombre)'} · {telefono}\n"
-            f"⏰ Recordatorio de prueba en {MIN_RECORDATORIO_FOTOS} min si no llegan fotos.")
+            f"⏰ Recordatorio {nota_fotos} si no llegan fotos.")
 
     elif fase == "fotos_pedidas":
         scheduler.cancel(telefono, "recordatorio_fotos_manual")
         lead["seguimiento_manual"] = "informe_enviado"
         state[telefono] = lead
         save_state(state)
-        scheduler.schedule(telefono, "seguimiento_informe_manual", fire_at=now + MIN_SEGUIMIENTO_INFORME * 60)
+        scheduler.schedule(telefono, "seguimiento_informe_manual", fire_at=fire_informe)
         wa_api.send_text(config.ADMIN_NUMBER,
             f"✅ *Registrado: fotos recibidas + informe enviado*\n👤 {nombre or '(sin nombre)'} · {telefono}\n"
-            f"⏰ Seguimiento de prueba en {MIN_SEGUIMIENTO_INFORME} min si no responde.")
+            f"⏰ Seguimiento {nota_informe}.")
 
     elif fase == "informe_enviado":
         scheduler.cancel(telefono, "seguimiento_informe_manual")
