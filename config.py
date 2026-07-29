@@ -275,6 +275,16 @@ MSGS = {
     },
 }
 
+# ── Enrutamiento hub central multi-mercado (sin servidor 24/7 propio) ──
+# Idiomas cuyos mensajes se depositan en la cola compartida (Sheet) en vez de
+# procesarse con la plantilla genérica de España (dominio/precio equivocados).
+# Ver memoria: project_ghh_whatsapp_hub_central_multimercado.
+INTL_MARKET_QUEUE = {
+    "it": "italia",
+    "en": "ingles",
+}
+INTL_QUEUE_SHEET_ID = _env("INTL_QUEUE_SHEET_ID", "1mBbCKqtG8i8aYRu7d4ID1S8YWHyd6iZYEYLs2u08eog")
+
 # Prefijos de país → idioma (fallback)
 PREFIX_LANG = {
     "34": "es", "44": "en", "1": "en", "49": "de",

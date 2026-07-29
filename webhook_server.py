@@ -286,6 +286,58 @@ def norm(num):
     num = str(num).strip()
     return num if num.startswith("+") else "+" + num
 
+# ─── Cola de mensajes para mercados internacionales sin servidor 24/7 ─────
+_INTL_QUEUE_LOCK = threading.Lock()
+
+def _sheets_service_intl():
+    """Reutiliza las credenciales de Google ya usadas por review_requests.py."""
+    from google.oauth2.credentials import Credentials as _Creds
+    from googleapiclient.discovery import build as _build
+    refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN")
+    client_id = os.environ.get("GOOGLE_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+    if refresh_token and client_id and client_secret:
+        creds = _Creds(
+            token=None, refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=client_id, client_secret=client_secret,
+            scopes=["https://www.googleapis.com/auth/spreadsheets"],
+        )
+    else:
+        tok = _load(os.path.join(_BASE, "..", "credentials", "google_tokens.json"), {})
+        creds = _Creds(
+            token=tok.get("access_token"), refresh_token=tok.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=tok.get("client_id"), client_secret=tok.get("client_secret"),
+            scopes=tok.get("scope", "").split(),
+        )
+    return _build("sheets", "v4", credentials=creds)
+
+def _queue_mercado_internacional(from_num: str, lang: str, body: str, msg_type: str, timestamp: int):
+    """
+    Deposita un mensaje entrante de un mercado sin servidor 24/7 propio (Italia,
+    Inglés) en una cola compartida (Google Sheet) para que esa sesión lo procese
+    en su próximo ciclo de loop, en vez de responder con la plantilla genérica
+    de España (dominio/precio equivocados para ese mercado).
+    """
+    mercado = config.INTL_MARKET_QUEUE.get(lang, lang)
+    texto = body if body else f"[{msg_type} recibido, sin texto]"
+    fecha = datetime.fromtimestamp(timestamp, TZ).strftime("%Y-%m-%d %H:%M")
+    row = [fecha, from_num, mercado, lang, texto, "pendiente", ""]
+    try:
+        with _INTL_QUEUE_LOCK:
+            service = _sheets_service_intl()
+            service.spreadsheets().values().append(
+                spreadsheetId=config.INTL_QUEUE_SHEET_ID,
+                range="Cola!A:G",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row]},
+            ).execute()
+        print(f"[INTL_QUEUE] {from_num} ({mercado}/{lang}) → depositado en cola")
+    except Exception as e:
+        print(f"[INTL_QUEUE] ERROR depositando {from_num} ({mercado}): {e}")
+
 # ─── Webhook Meta: verificación GET ──────────────────────────────
 @app.route("/webhook", methods=["GET"])
 def verify():
@@ -328,6 +380,15 @@ def process_message(msg):
 
     # Detectar idioma (política: mensaje > historial > país)
     lang = detect_language(body, from_num, lead.get("idioma", ""))
+
+    # ── Enrutamiento hub central: mercados con sesión propia (sin servidor 24/7) ──
+    # Italia e Inglés no tienen infraestructura propia para escuchar webhooks;
+    # España actúa de hub y deposita estos leads en una cola compartida (Sheet)
+    # en vez de responder con la plantilla genérica (que enlaza al dominio de España).
+    # Ver memoria: project_ghh_whatsapp_hub_central_multimercado.
+    if lang in config.INTL_MARKET_QUEUE:
+        _queue_mercado_internacional(from_num, lang, body, msg_type, timestamp)
+        return
 
     estado = lead.get("estado", "")
 
