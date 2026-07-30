@@ -1,20 +1,52 @@
 """
 audit_seo_sem.py — Auditoría diaria completa GHH (SEO + SEM)
-07:00 Atlantic/Canary desde Railway (Mac puede estar apagado).
+07:00 Atlantic/Canary desde Render (Mac puede estar apagado).
 
-🟢 Ejecuta solo: negativos Ads, pausar DISAPPROVED, mejorar RSA,
-                  reescribir metas débiles, IndexNow, alertas 404/CWV.
-🔴 Solo reporta:  caídas de posición top pages, gasto sin conversión,
+⚠️ ACTUALIZADO 30-jul-2026: Ads es SOLO LECTURA por norma suprema
+(feedback_ads_negativas_exact_ok, project_ghh_ads_protocol) — negativos,
+pausar DISAPPROVED y mejora de RSA ya NO se ejecutan automáticamente,
+solo se recomiendan en el reporte. Llevaban desde el 23-jun mutando Ads
+en producción sin que nadie lo hubiera desactivado tras esas normas.
+
+🟢 Ejecuta solo: reescribir metas débiles (máx 5/semana, cadencia
+                  persistente), IndexNow, alertas 404/CWV.
+🔴 Solo reporta:  negativos Ads, anuncios DISAPPROVED, mejoras RSA,
+                  caídas de posición top pages, gasto sin conversión,
                   dayparting ineficiente, ad spend > umbral sin conv.
 """
 
-import os, requests, traceback, re, base64
+import os, requests, traceback, re, base64, json
 from datetime import date, timedelta
 from urllib.parse import quote as url_quote
 
 SITE     = "https://trasplantepeloturquia.com"
 ADS_VER  = "v21"
 GSC_SITE = f"{SITE}/"
+
+# ── Límite de cadencia de metas SEO (30-jul-2026) ────────────────────
+# feedback_seo_cadencia_cambios: máx 5 snippets/semana para evitar
+# sobreexposición — este job corre a diario, así que hace falta un
+# contador semanal persistente, no solo un tope por ejecución.
+_SEO_CADENCE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "seo_meta_cadencia.json")
+_SEO_CADENCE_MAX_SEMANAL = 5
+
+def _seo_cadencia_disponible():
+    """Devuelve cuántas reescrituras de meta quedan disponibles esta semana ISO."""
+    year, week, _ = date.today().isocalendar()
+    key = f"{year}-W{week}"
+    try:
+        with open(_SEO_CADENCE_FILE) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+    usados = data.get(key, 0)
+    return max(0, _SEO_CADENCE_MAX_SEMANAL - usados), key, data
+
+def _seo_cadencia_registrar(n, key, data):
+    data[key] = data.get(key, 0) + n
+    os.makedirs(os.path.dirname(_SEO_CADENCE_FILE), exist_ok=True)
+    with open(_SEO_CADENCE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 # ── RSA Bank (GHH) ───────────────────────────────────────────────────
 RSA_HEADLINES = [
@@ -394,12 +426,16 @@ def _rewrite_weak_metas(weak_pages):
     if not auth:
         print("[AUDIT] WP_USER/WP_APP_PASS no configurados — saltando metas")
         return []
+    disponibles, cadencia_key, cadencia_data = _seo_cadencia_disponible()
+    if disponibles <= 0:
+        print(f"[AUDIT] Cadencia SEO agotada esta semana ({cadencia_key}, máx {_SEO_CADENCE_MAX_SEMANAL}/semana) — saltando metas")
+        return []
     headers = {
         "Authorization": f"Basic {auth}",
         "Content-Type":  "application/json"
     }
     rewritten = []
-    for page in weak_pages[:5]:
+    for page in weak_pages[:disponibles]:
         url  = page["keys"][0]
         slug = url.rstrip("/").split("/")[-1]
         # Buscar post por slug
@@ -436,6 +472,8 @@ def _rewrite_weak_metas(weak_pages):
                 print(f"[AUDIT] Meta reescrita: {slug}")
         except Exception as e:
             print(f"[AUDIT] Error meta {slug}: {e}")
+    if rewritten:
+        _seo_cadencia_registrar(len(rewritten), cadencia_key, cadencia_data)
     return rewritten
 
 
@@ -520,34 +558,42 @@ def run_daily_audit():
     _camp_cpa_30d   = round(_total_cost_30d / _total_conv_30d, 2) if _total_conv_30d > 0 else None
     _camp_ok        = _total_conv_30d >= 5 and (_camp_cpa_30d or 999) < 25  # campaña sana
 
-    # ── 🟢 EJECUTAR ─────────────────────────────────────────────────
+    # ── ⛔ DESACTIVADO (30-jul-2026) — Ads es SOLO LECTURA por norma suprema ──
+    # feedback_ads_negativas_exact_ok.md (26-jun): "CERO EJECUCIONES... SUPERSEDE
+    # y DEROGA cualquier autorización previa de auto-ejecución de keywords/negativas."
+    # project_ghh_ads_protocol.md: "Mientras no haya servidor de escritura oficial,
+    # Code no ejecuta ni siquiera lo 🟢: lo RECOMIENDA y Sergi lo aplica."
+    # Este bloque llevaba desde el 23-jun mutando Ads en producción a diario
+    # (negativos, pausar DISAPPROVED, reescribir RSA) sin que nadie lo hubiera
+    # desactivado tras esas normas posteriores. Convertido a solo-recomendación.
 
-    # 1. Negativos Ads sin geo
+    # 1. Negativos Ads sin geo (antes: se añadían automáticamente)
     try:
         neg = _detect_negatives(terms)
         if neg:
-            added = _add_negatives(token, cids, neg)
-            if added:
-                ejecutado.append(f"➕ {len(added)} negativos Ads añadidos:\n"
-                                 + "\n".join(f"  - {n}" for n in added[:10]))
+            recomendado.append(f"➕ RECOMENDADO — {len(neg)} negativo(s) Ads sugerido(s) (revisar y aplicar manual):\n"
+                               + "\n".join(f"  - {n}" for n in neg[:10]))
     except Exception as e:
         print(f"[AUDIT] Error negativos: {e}")
 
-    # 2. Pausar anuncios DISAPPROVED
+    # 2. Anuncios DISAPPROVED (antes: se pausaban automáticamente)
     try:
-        paused = _pause_disapproved(token, rsa_rows)
-        if paused:
-            ejecutado.append(f"⏸ {len(paused)} anuncio(s) DISAPPROVED pausado(s)")
+        to_flag = [
+            row for row in rsa_rows
+            if row.get("adGroupAd", {}).get("policySummary", {}).get("approvalStatus") == "DISAPPROVED"
+        ]
+        if to_flag:
+            recomendado.append(f"⏸ RECOMENDADO — {len(to_flag)} anuncio(s) DISAPPROVED, revisar y pausar manual")
     except Exception as e:
-        print(f"[AUDIT] Error pause disapproved: {e}")
+        print(f"[AUDIT] Error detectar disapproved: {e}")
 
-    # 3. Mejorar RSA (headlines + descriptions)
+    # 3. Mejora de RSA (antes: se editaba headlines/descriptions automáticamente)
     try:
-        improved = _improve_rsa(token, rsa_rows)
-        if improved:
-            ejecutado.append(f"📝 RSA mejorado(s): {len(improved)} (headlines + descriptions añadidos)")
+        rsa_suggestions = _suggest_rsa_improvements(rsa_rows) if '_suggest_rsa_improvements' in dir() else []
+        if rsa_suggestions:
+            recomendado.append(f"📝 RECOMENDADO — {len(rsa_suggestions)} RSA con margen de mejora (revisar manual)")
     except Exception as e:
-        print(f"[AUDIT] Error RSA improve: {e}")
+        print(f"[AUDIT] Error sugerencia RSA: {e}")
 
     # 4. Reescribir metas SEO débiles (solo blog, pos >15)
     try:
